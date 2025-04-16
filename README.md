@@ -42,7 +42,7 @@ The project pipeline combines modern machine learning techniques with ESG analyt
 
 3. 📈 **Training & Evaluation**
    - Optimized using `Adam`, learning rate scheduling, and gradient clipping
-   - Evaluated via MSE loss and plotted predictions vs actuals
+   - Evaluated via MSE, MAE, RMSE, MAPE and R² losses and plotted predictions vs actuals
 
 4. 📦 **Clean Code & Modular Design**
    - Organized using `lib/` structure for scalability
@@ -70,7 +70,7 @@ The project pipeline combines modern machine learning techniques with ESG analyt
   - Root Mean Squared Error (RMSE): 142.7451
   - Mean Absolute Percentage Error (MAPE): 79.52%
   - R² Score: 0.5616
-  - Test Loss: 1.188641
+
 ---
 
 ## 🧾 Example Use
@@ -78,3 +78,29 @@ The project pipeline combines modern machine learning techniques with ESG analyt
 ```bash
 poetry install
 poetry run python main.py
+```
+
+---
+
+## 🤝 Let's Collaborate
+
+If you are:
+
+- 🔬 A researcher in **sustainable finance**  
+- 🧠 A data scientist exploring **non-traditional time series inputs**  
+- 🏦 A financial institution promoting **ethical AI**  
+- 🌍 An environmental advocate interested in **data activism**  
+
+then you’re invited to build on this work!  
+Feel free to **fork** the repository, **open an issue**, or **reach out** to discuss ideas or collaborations.
+
+---
+
+### 🧑‍💻 Author
+
+**Ahmet Çağatay Savaşlı**
+[LinkedIn](https://www.linkedin.com/in/ahmet-cagatay-savasli-424a5a1b3/)
+
+---
+
+> _"In the age of algorithms, let’s teach our models not just to **think**, but to **care**."_ 🌱
