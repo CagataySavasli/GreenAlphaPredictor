@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,9 +15,24 @@ from lib import DataLoader, PriceForecastLSTM, TimeSeriesDataset
 
 
 ###############################################################################
-# ESG Bazlı Forecasting için Veri Hazırlama (Mevcut)
+# Data Preparation for ESG-Based Forecasting
 ###############################################################################
 def load_and_prepare_multi_company_data(ticker_list: list, train_threshold: str, seq_length: int):
+    """
+    Prepare time-series data for multiple companies using ESG features.
+
+    For each ticker, data is loaded, split into training and testing sets based on a date threshold,
+    and the ESG features (all columns except 'Date', 'Price', and 'Ticker') are scaled.
+    Sliding window sequences are generated for training and testing.
+
+    Returns:
+        X_train (np.array): Training input sequences with shape (num_train_sequences, seq_length, n_features).
+        y_train (np.array): Scaled training targets (Price).
+        X_test (np.array): Testing input sequences.
+        y_test (np.array): Testing targets.
+        scaler_target (StandardScaler): Scaler fitted on the training Price values.
+        esg_columns (list): List of ESG feature column names.
+    """
     data_loader = DataLoader()
     train_dfs = []
     test_dfs = []
@@ -41,10 +57,9 @@ def load_and_prepare_multi_company_data(ticker_list: list, train_threshold: str,
     if not train_dfs or not test_dfs:
         raise ValueError("Not enough data across tickers for the given sequence length and split date.")
 
-    # Tüm eğitim verileri üzerinden scaler fit edilir
+    # Fit scaler on all training data
     train_all = pd.concat(train_dfs, ignore_index=True)
-
-    # ESG sütunları: 'Date', 'Price' ve 'Ticker' dışındaki sütunlar
+    # ESG columns: all columns except 'Date', 'Price' and 'Ticker'
     esg_columns = [col for col in train_all.columns if col not in ['Date', 'Price', 'Ticker']]
 
     scaler_features = StandardScaler()
@@ -84,9 +99,22 @@ def load_and_prepare_multi_company_data(ticker_list: list, train_threshold: str,
 
 
 ###############################################################################
-# Fiyat Bazlı (Genel) Forecasting için Veri Hazırlama
+# Data Preparation for Price-Based (General) Forecasting
 ###############################################################################
 def load_and_prepare_price_data(ticker_list: list, train_threshold: str, seq_length: int):
+    """
+    Prepare time-series data using only the 'Price' column.
+
+    For each ticker, the data is loaded and split into training/testing sets based on a date threshold.
+    A global scaler is fit on the training 'Price' data and sliding window sequences are generated.
+
+    Returns:
+        X_train (np.array): Training input sequences with shape (num_train_sequences, seq_length, 1).
+        y_train (np.array): Training targets (scaled Price).
+        X_test (np.array): Testing input sequences.
+        y_test (np.array): Testing targets.
+        scaler (StandardScaler): Scaler fitted on Price data.
+    """
     data_loader = DataLoader()
     train_dfs = []
     test_dfs = []
@@ -148,13 +176,13 @@ def load_and_prepare_price_data(ticker_list: list, train_threshold: str, seq_len
 
 
 ###############################################################################
-# Hibrit Model için Veri Hazırlama: Fiyat ve ESG özelliklerinin birleşimi
+# Data Preparation for Hybrid Model (Combination of Price and ESG Features)
 ###############################################################################
 def load_and_prepare_hybrid_data(ticker_list: list, train_threshold: str, seq_length: int):
     """
-    Hibrit veri hazırlama; girdiler olarak hem Price hem de ESG özelliklerini içerir.
-    Hybrid features: ['Price'] + [diğer ESG sütunları]
-    Hedef, ölçeklendirilmiş Price değeridir.
+    Prepare hybrid data, which contains both Price and ESG features as input.
+    The hybrid features include ['Price'] + [all other ESG columns].
+    The target remains the scaled Price value.
     """
     data_loader = DataLoader()
     train_dfs = []
@@ -181,7 +209,7 @@ def load_and_prepare_hybrid_data(ticker_list: list, train_threshold: str, seq_le
         raise ValueError("Not enough data across tickers for hybrid forecasting.")
 
     train_all = pd.concat(train_dfs, ignore_index=True)
-    # Hibrit girdi olarak: Price sütunu + ESG sütunları (Date, Price, Ticker hariç)
+    # Hybrid input: Price + all ESG columns (excluding 'Date', 'Ticker', and 'Price' for ESG features)
     hybrid_esg = [col for col in train_all.columns if col not in ['Date', 'Ticker', 'Price']]
     hybrid_columns = ['Price'] + hybrid_esg
 
@@ -222,7 +250,7 @@ def load_and_prepare_hybrid_data(ticker_list: list, train_threshold: str, seq_le
 
 
 ###############################################################################
-# Model Eğitimi ve Değerlendirme Fonksiyonları (Orijinal)
+# Model Training and Evaluation Functions
 ###############################################################################
 def train_model(model, train_loader, criterion, optimizer, device, num_epochs=100, scheduler=None):
     model.to(device)
@@ -250,6 +278,18 @@ def train_model(model, train_loader, criterion, optimizer, device, num_epochs=10
 
 
 def evaluate_model(model, test_loader, criterion, device, scaler_target):
+    """
+    Evaluate the model on the test set and calculate performance metrics.
+
+    Returns:
+        mse (float): Mean Squared Error (MSE).
+        mae (float): Mean Absolute Error (MAE).
+        rmse (float): Root Mean Squared Error (RMSE).
+        mape (float): Mean Absolute Percentage Error (MAPE).
+        r2 (float): R² Score.
+        predictions (np.array): Predicted Price (inverse scaled).
+        actuals (np.array): Actual Price (inverse scaled).
+    """
     model.eval()
     test_loss = 0.0
     predictions = []
@@ -266,6 +306,7 @@ def evaluate_model(model, test_loader, criterion, device, scaler_target):
             predictions.extend(preds_inv.flatten())
             actuals.extend(acts_inv.flatten())
     test_loss /= len(test_loader.dataset)
+    mse = test_loss
     predictions = np.array(predictions)
     actuals = np.array(actuals)
     mae = mean_absolute_error(actuals, predictions)
@@ -273,23 +314,27 @@ def evaluate_model(model, test_loader, criterion, device, scaler_target):
     mape = np.mean(np.abs((actuals - predictions) / actuals)) * 100
     r2 = r2_score(actuals, predictions)
     print("\n📊 Evaluation Metrics:")
-    print(f"➡️ MSE: {test_loss:.4f}")
-    print(f"➡️ MAE: {mae:.4f}")
-    print(f"➡️ RMSE: {rmse:.4f}")
-    print(f"➡️ MAPE: {mape:.2f}%")
-    print(f"➡️ R²: {r2:.4f}")
-    return test_loss, predictions, actuals
+    print(f"-> MSE: {mse:.4f}")
+    print(f"-> MAE: {mae:.4f}")
+    print(f"-> RMSE: {rmse:.4f}")
+    print(f"-> MAPE: {mape:.2f}%")
+    print(f"-> R²: {r2:.4f}")
+    return mse, mae, rmse, mape, r2, predictions, actuals
 
 
 ###############################################################################
-# Main Fonksiyonu: Üç Yaklaşımın (ESG, Fiyat, Hibrit) Karşılaştırılması
+# Main Function: Comparison of Three Approaches (ESG, Price, and Hybrid)
 ###############################################################################
 def main():
-    # -------------------------- Konfigürasyon -------------------------------
+    # Create necessary directories if they don't exist
+    os.makedirs("outputs/plots", exist_ok=True)
+    os.makedirs("outputs", exist_ok=True)
+
+    # -------------------------- Configuration -------------------------------
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     tables = pd.read_html(url)
     df = tables[0]
-    ticker_list = df["Symbol"].tolist()[:10]
+    ticker_list = df["Symbol"].tolist()
 
     train_threshold = "2018-12-01"
     seq_length = 5
@@ -305,16 +350,16 @@ def main():
     torch.manual_seed(42)
 
     ############################################################################
-    # 1. ESG Bazlı Forecasting Modeli (Sadece ESG datası kullanılarak)
+    # 1. ESG-Based Forecasting Model (Using only ESG data)
     ############################################################################
-    print("ESG bazlı forecasting modeli eğitiliyor...")
+    print("Training ESG-based forecasting model...")
     X_train_esg, y_train_esg, X_test_esg, y_test_esg, scaler_target_esg, esg_columns = load_and_prepare_multi_company_data(
         ticker_list=ticker_list,
         train_threshold=train_threshold,
         seq_length=seq_length
     )
     if X_train_esg is None or X_test_esg is None:
-        raise ValueError("ESG bazlı model için yeterli veri bulunamadı.")
+        raise ValueError("Not enough data for ESG-based model.")
 
     train_dataset_esg = TimeSeriesDataset(X_train_esg, y_train_esg)
     test_dataset_esg = TimeSeriesDataset(X_test_esg, y_test_esg)
@@ -337,8 +382,8 @@ def main():
         scheduler=scheduler_esg
     )
 
-    print("ESG bazlı model değerlendirmesi:")
-    test_loss_esg, predictions_esg, actuals_esg = evaluate_model(
+    print("Evaluating ESG-based model:")
+    mse_esg, mae_esg, rmse_esg, mape_esg, r2_esg, predictions_esg, actuals_esg = evaluate_model(
         model=model_esg,
         test_loader=test_loader_esg,
         criterion=criterion,
@@ -346,25 +391,24 @@ def main():
         scaler_target=scaler_target_esg
     )
 
-
     ############################################################################
-    # 2. Fiyat Bazlı (Genel) Forecasting Modeli (Sadece Price datası kullanılarak)
+    # 2. Price-Based Forecasting Model (Using only Price data)
     ############################################################################
-    print("\nFiyat bazlı (genel) forecasting modeli eğitiliyor...")
+    print("\nTraining Price-based forecasting model...")
     X_train_price, y_train_price, X_test_price, y_test_price, scaler_price = load_and_prepare_price_data(
         ticker_list=ticker_list,
         train_threshold=train_threshold,
         seq_length=seq_length
     )
     if X_train_price is None or X_test_price is None:
-        raise ValueError("Fiyat bazlı model için yeterli veri bulunamadı.")
+        raise ValueError("Not enough data for Price-based model.")
 
     train_dataset_price = TimeSeriesDataset(X_train_price, y_train_price)
     test_dataset_price = TimeSeriesDataset(X_test_price, y_test_price)
     train_loader_price = TorchDataLoader(train_dataset_price, batch_size=batch_size, shuffle=True)
     test_loader_price = TorchDataLoader(test_dataset_price, batch_size=batch_size, shuffle=False)
 
-    input_size_price = X_train_price.shape[2]  # Bu durumda 1
+    input_size_price = X_train_price.shape[2]  # In this case, 1
     model_price = PriceForecastLSTM(input_size_price, hidden_size, num_layers, dropout=dropout_rate)
     optimizer_price = optim.Adam(model_price.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler_price = optim.lr_scheduler.ReduceLROnPlateau(optimizer_price, mode='min', factor=0.5, patience=10, verbose=True)
@@ -379,8 +423,8 @@ def main():
         scheduler=scheduler_price
     )
 
-    print("Fiyat bazlı model değerlendirmesi:")
-    test_loss_price, predictions_price, actuals_price = evaluate_model(
+    print("Evaluating Price-based model:")
+    mse_price, mae_price, rmse_price, mape_price, r2_price, predictions_price, actuals_price = evaluate_model(
         model=model_price,
         test_loader=test_loader_price,
         criterion=criterion,
@@ -388,18 +432,17 @@ def main():
         scaler_target=scaler_price
     )
 
-
     ############################################################################
-    # 3. Hibrit Model: Hem Price hem de ESG verilerinin birleşimi
+    # 3. Hybrid Model: Combination of Price and ESG data
     ############################################################################
-    print("\nHibrit forecasting modeli (Price + ESG) eğitiliyor...")
+    print("\nTraining Hybrid forecasting model (Price + ESG)...")
     X_train_hyb, y_train_hyb, X_test_hyb, y_test_hyb, scaler_target_hyb, hybrid_columns = load_and_prepare_hybrid_data(
         ticker_list=ticker_list,
         train_threshold=train_threshold,
         seq_length=seq_length
     )
     if X_train_hyb is None or X_test_hyb is None:
-        raise ValueError("Hibrit model için yeterli veri bulunamadı.")
+        raise ValueError("Not enough data for Hybrid model.")
 
     train_dataset_hyb = TimeSeriesDataset(X_train_hyb, y_train_hyb)
     test_dataset_hyb = TimeSeriesDataset(X_test_hyb, y_test_hyb)
@@ -421,8 +464,8 @@ def main():
         scheduler=scheduler_hyb
     )
 
-    print("Hibrit model değerlendirmesi:")
-    test_loss_hyb, predictions_hyb, actuals_hyb = evaluate_model(
+    print("Evaluating Hybrid model:")
+    mse_hyb, mae_hyb, rmse_hyb, mape_hyb, r2_hyb, predictions_hyb, actuals_hyb = evaluate_model(
         model=model_hyb,
         test_loader=test_loader_hyb,
         criterion=criterion,
@@ -430,60 +473,68 @@ def main():
         scaler_target=scaler_target_hyb
     )
 
-
     ############################################################################
-    # Performans Karşılaştırma ve Grafikler
+    # Performance Comparison, Plotting, and Saving Outputs
     ############################################################################
-    # Eğitim kayıplarını karşılaştırma grafiği
+    # Plot training losses for comparison
     plt.figure(figsize=(10, 5))
-    plt.plot(training_losses_esg, label="ESG Bazlı Model")
-    plt.plot(training_losses_price, label="Fiyat Bazlı Model")
-    plt.plot(training_losses_hyb, label="Hibrit Model")
+    plt.plot(training_losses_esg, label="ESG-Based Model")
+    plt.plot(training_losses_price, label="Price-Based Model")
+    plt.plot(training_losses_hyb, label="Hybrid Model")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
-    plt.title("Eğitim Kaybı Karşılaştırması")
+    plt.title("Training Loss Comparison")
     plt.legend()
-    plt.savefig("plots/training_loss_comparison.png")
+    plt.savefig("outputs/plots/training_loss_comparison.png")
     plt.show()
 
-    # ESG bazlı model sonuçları
+    # Plot ESG-based model predictions
     plt.figure(figsize=(10, 5))
-    plt.plot(predictions_esg, label="Tahmin (ESG Bazlı)")
-    plt.plot(actuals_esg, label="Gerçek (ESG Bazlı)")
+    plt.plot(predictions_esg, label="Prediction (ESG-Based)")
+    plt.plot(actuals_esg, label="Actual (ESG-Based)")
     plt.xlabel("Time Step")
     plt.ylabel("Price")
-    plt.title("ESG Bazlı Forecasting")
+    plt.title("ESG-Based Forecasting")
     plt.legend()
-    plt.savefig("plots/esg_predictions_vs_actuals.png")
+    plt.savefig("outputs/plots/esg_predictions_vs_actuals.png")
     plt.show()
 
-    # Fiyat bazlı model sonuçları
+    # Plot Price-based model predictions
     plt.figure(figsize=(10, 5))
-    plt.plot(predictions_price, label="Tahmin (Fiyat Bazlı)")
-    plt.plot(actuals_price, label="Gerçek (Fiyat Bazlı)")
+    plt.plot(predictions_price, label="Prediction (Price-Based)")
+    plt.plot(actuals_price, label="Actual (Price-Based)")
     plt.xlabel("Time Step")
     plt.ylabel("Price")
-    plt.title("Fiyat Bazlı Forecasting")
+    plt.title("Price-Based Forecasting")
     plt.legend()
-    plt.savefig("plots/price_predictions_vs_actuals.png")
+    plt.savefig("outputs/plots/price_predictions_vs_actuals.png")
     plt.show()
 
-    # Hibrit model sonuçları
+    # Plot Hybrid model predictions
     plt.figure(figsize=(10, 5))
-    plt.plot(predictions_hyb, label="Tahmin (Hibrit)")
-    plt.plot(actuals_hyb, label="Gerçek (Hibrit)")
+    plt.plot(predictions_hyb, label="Prediction (Hybrid)")
+    plt.plot(actuals_hyb, label="Actual (Hybrid)")
     plt.xlabel("Time Step")
     plt.ylabel("Price")
-    plt.title("Hibrit Forecasting (Price + ESG)")
+    plt.title("Hybrid Forecasting (Price + ESG)")
     plt.legend()
-    plt.savefig("plots/hybrid_predictions_vs_actuals.png")
+    plt.savefig("outputs/plots/hybrid_predictions_vs_actuals.png")
     plt.show()
 
+    # Save the model comparison results to a CSV file (all metrics rounded to 4 decimals)
+    results = {
+        "Model": ["ESG-Based", "Price-Based", "Hybrid"],
+        "MSE": [round(mse_esg, 4), round(mse_price, 4), round(mse_hyb, 4)],
+        "MAE": [round(mae_esg, 4), round(mae_price, 4), round(mae_hyb, 4)],
+        "RMSE": [round(rmse_esg, 4), round(rmse_price, 4), round(rmse_hyb, 4)],
+        "MAPE (%)": [round(mape_esg, 4), round(mape_price, 4), round(mape_hyb, 4)],
+        "R^2": [round(r2_esg, 4), round(r2_price, 4), round(r2_hyb, 4)]
+    }
+    results_df = pd.DataFrame(results)
+    results_df.to_csv("outputs/result.csv", index=False)
     print("\n------------------------------")
-    print("Modellerin Karşılaştırılması:")
-    print(f"ESG Bazlı Model MSE: {test_loss_esg:.4f}")
-    print(f"Fiyat Bazlı Model MSE: {test_loss_price:.4f}")
-    print(f"Hibrit Model MSE: {test_loss_hyb:.4f}")
+    print("Model Comparison:")
+    print(results_df)
     print("------------------------------")
 
 
