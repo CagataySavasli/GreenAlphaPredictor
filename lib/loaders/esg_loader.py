@@ -1,5 +1,6 @@
 import requests
 import pandas as pd
+from tqdm import tqdm
 import time
 
 class ESGLoader():
@@ -27,16 +28,18 @@ class ESGLoader():
         data = resp.json()
         data = data["esgChart"]
         data = data["result"][0]
+        try:
+            # peer_group = data["peerGroup"]
+            symbol_series = data["symbolSeries"]
 
-        peer_group = data["peerGroup"]
-        symbol_series = data["symbolSeries"]
+            result = pd.DataFrame(symbol_series)
+            result['symbol'] = symbol
+            # result['peerGroup'] = peer_group
+            result['timestamp'] = pd.to_datetime(result['timestamp'], unit='s')
+            result.rename(columns={"timestamp": "date"}, inplace=True)
 
-        result = pd.DataFrame(symbol_series)
-        result['symbol'] = symbol
-        # result['peerGroup'] = peer_group
-        result['timestamp'] = pd.to_datetime(result['timestamp'], unit='s')
-        result.rename(columns={"timestamp": "date"}, inplace=True)
-
-        result = result.iloc[:-1]
-
+            result = result.iloc[:-1]
+        except KeyError:
+            tqdm.write(f"KeyError: {symbol} için veri bulunamadı.")
+            return None
         return result
