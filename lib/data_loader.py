@@ -1,8 +1,8 @@
 from lib.loaders import FinLoader, ESGLoader
 import pandas as pd
+from tqdm import trange
 
-
-class DataLoader:
+class DataDownLoader:
     def __init__(self):
         self.esg = ESGLoader()
         self.price = FinLoader()
@@ -25,3 +25,17 @@ class DataLoader:
             if data.isnull().sum().sum() == 0:
                 return data
         return None
+
+    def load_data_all(self, tickers: list[str]) -> pd.DataFrame:
+        data_frames = []
+        progress_bar = trange(len(tickers), desc="Loading data", unit="ticker")
+        for idx in progress_bar:
+            ticker = tickers[idx]
+            data = self.load_data(ticker)
+            if data is not None:
+                data_frames.append(data)
+
+        if len(data_frames) > 0:
+            return pd.concat(data_frames, ignore_index=True)
+        else:
+            return None
