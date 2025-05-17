@@ -58,3 +58,27 @@ def evaluate_model(model, test_loader):
             predictions.append(outputs.numpy())
             labels.append(y_batch.numpy())
     return predictions, labels
+
+def print_results_table(dict_results):
+    """
+    Print the contents of dict_results in a tabular format,
+    extracting the single value from mse/r2 lists when they contain only one element.
+    """
+    rows = []
+    for model, approaches in dict_results.items():
+        for approach, metrics in approaches.items():
+            mse_list = metrics.get('mse', [])
+            r2_list  = metrics.get('r2', [])
+            # extract the single element if list length == 1
+            mse_val = mse_list[0] if isinstance(mse_list, list) and len(mse_list) == 1 else mse_list
+            r2_val  = r2_list[0]  if isinstance(r2_list,  list) and len(r2_list)  == 1 else r2_list
+            rows.append({
+                'Model':    model,
+                'Approach': approach,
+                'MSE':      mse_val,
+                'R2':       r2_val
+            })
+
+    df = pd.DataFrame(rows)
+    print(df.to_string(index=False))
+    return df
