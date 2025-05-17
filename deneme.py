@@ -2,10 +2,12 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 from lib import DataDownLoader, PriceForecastLSTM, TimeSeriesDataset
+from lib.price_forecase_transformer import PriceForecastTransformer
 from lib.utils import (
                         get_sp500_tickers,
                         train_model,
-                        evaluate_model
+                        evaluate_model,
+                        print_results_table
                     )
 from sklearn.metrics import mean_squared_error, r2_score
 import pandas as pd
@@ -25,7 +27,7 @@ horizon = 1  # 1 gün sonrası tahmin
 
 data_loader = DataDownLoader()
 
-ticker_list = ticker_list[0:50]
+# ticker_list = ticker_list[0:50]
 
 data = data_loader.load_data_all(ticker_list)
 
@@ -35,45 +37,65 @@ data_train = data_train.reset_index(drop=True)
 data_test = data_test.reset_index(drop=True)
 
 dict_results = {
-    'price': {'mse': [], 'r2': []},
-    'esg': {'mse': [], 'r2': []},
-    'hybrid': {'mse': [], 'r2': []}
+
+    'lstm': {
+        'price': {'mse': [], 'r2': []},
+        'esg': {'mse': [], 'r2': []},
+        'hybrid': {'mse': [], 'r2': []}
+    },
+
+     'transformer': {
+            'price': {'mse': [], 'r2': []},
+            'esg': {'mse': [], 'r2': []},
+            'hybrid': {'mse': [], 'r2': []}
+     }
+
 }
-for feature_set, feature_cols in dict_feature_cols.items():
-    print(f"Training with feature set: {feature_set}")
-    dataset_train = TimeSeriesDataset(
-        df=data_train,
-        feature_cols=feature_cols,
-        target_col=target_col,
-        window_size=window_size,
-        horizon=horizon
-    )
 
-    dataset_test = TimeSeriesDataset(
-        df=data_test,
-        feature_cols=feature_cols,
-        target_col=target_col,
-        window_size=window_size,
-        horizon=horizon
-    )
+for model_approach in ['lstm', 'transformer']:
+    for feature_set, feature_cols in dict_feature_cols.items():
 
-    train_loader = DataLoader(dataset_train, batch_size=16, shuffle=True)
-    test_loader = DataLoader(dataset_test, batch_size=1, shuffle=False)
+        print(f"Training with feature set: {feature_set}")
+        print(f"Training with model approach: {model_approach}")
+        dataset_train = TimeSeriesDataset(
+            df=data_train,
+            feature_cols=feature_cols,
+            target_col=target_col,
+            window_size=window_size,
+            horizon=horizon
+        )
 
-    model = PriceForecastLSTM(input_size=len(feature_cols), hidden_size=64, num_layers=2)
-    criterion = torch.nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+        dataset_test = TimeSeriesDataset(
+            df=data_test,
+            feature_cols=feature_cols,
+            target_col=target_col,
+            window_size=window_size,
+            horizon=horizon
+        )
 
-    model = train_model(model, train_loader, criterion, optimizer, num_epochs=200)
-    y_predictions, y_reals = evaluate_model(model, test_loader)
+        train_loader = DataLoader(dataset_train, batch_size=16, shuffle=True)
+        test_loader = DataLoader(dataset_test, batch_size=1, shuffle=False)
 
-    mse = mean_squared_error(y_reals, y_predictions)
-    r2 = r2_score(y_reals, y_predictions)
+        if model_approach == 'lstm':
+            model = PriceForecastLSTM(input_size=len(feature_cols), hidden_size=64, num_layers=2)
+        elif model_approach == 'transformer':
+            model = PriceForecastTransformer(input_size=len(feature_cols))
+        else:
+            raise ValueError("Invalid model approach.")
+        criterion = torch.nn.MSELoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-    dict_results[feature_set]['mse'].append(mse)
-    dict_results[feature_set]['r2'].append(r2)
+        model = train_model(model, train_loader, criterion, optimizer, num_epochs=200)
+        y_predictions, y_reals = evaluate_model(model, test_loader)
+
+        mse = mean_squared_error(y_reals, y_predictions)
+        r2 = r2_score(y_reals, y_predictions)
+
+        dict_results[model_approach][feature_set]['mse'].append(mse)
+        dict_results[model_approach][feature_set]['r2'].append(r2)
 
 print("Results:")
 print(dict_results)
 
-
+results_table = print_results_table(dict_results)
+results_table.to_csv("outputs/results.csv", index=False)
