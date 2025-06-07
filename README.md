@@ -70,6 +70,8 @@ The project pipeline combines modern machine learning techniques with ESG analyt
   - Root Mean Squared Error (RMSE): 142.7451
   - Mean Absolute Percentage Error (MAPE): 79.52%
   - R² Score: 0.5616
+  -
+
 
 ---
 
@@ -104,3 +106,4 @@ Feel free to **fork** the repository, **open an issue**, or **reach out** to dis
 ---
 
 > _"In the age of algorithms, let’s teach our models not just to **think**, but to **care**."_ 🌱
+
